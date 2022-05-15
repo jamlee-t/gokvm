@@ -27,8 +27,8 @@ type Serial struct {
 func New(irqInjector IRQInjector) (*Serial, error) {
 	s := &Serial{
 		IER: 0, LCR: 0,
-		inputChan:   make(chan byte, 10000),
-		irqInjector: irqInjector,
+		inputChan:   make(chan byte, 10000), // 输入 Chan
+		irqInjector: irqInjector, // 触发中断
 	}
 
 	return s, nil
@@ -42,6 +42,7 @@ func (s *Serial) dlab() bool {
 	return s.LCR&0x80 != 0
 }
 
+// IN 指令，OS 在在读取数据。所以外部串口设备往 IO 端口写入数据
 func (s *Serial) In(port uint64, values []byte) error {
 	port -= COM1Addr
 
@@ -82,6 +83,7 @@ func (s *Serial) In(port uint64, values []byte) error {
 	return nil
 }
 
+// 外部从串口设备读取
 func (s *Serial) Out(port uint64, values []byte) error {
 	port -= COM1Addr
 

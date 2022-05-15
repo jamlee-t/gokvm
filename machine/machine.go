@@ -54,6 +54,7 @@ const (
 	kernelAddr    = 0x100000
 	initrdAddr    = 0xf000000
 
+	// 硬件中断号
 	serialIRQ    = 4
 	virtioNetIRQ = 9
 	virtioBlkIRQ = 10
@@ -69,12 +70,13 @@ type Machine struct {
 	kvmFd, vmFd    uintptr
 	vcpuFds        []uintptr
 	mem            []byte
-	runs           []*kvm.RunData
-	pci            *pci.PCI
-	serial         *serial.Serial
+	runs           []*kvm.RunData     // 加载的bzImage内核数据
+	pci            *pci.PCI           // net 和 blk
+	serial         *serial.Serial     // 串口
 	ioportHandlers [0x10000][2]func(m *Machine, port uint64, bytes []byte) error
 }
 
+// 创建新虚拟机
 func New(nCpus int, tapIfName string, diskPath string) (*Machine, error) {
 	m := &Machine{}
 
@@ -83,14 +85,17 @@ func New(nCpus int, tapIfName string, diskPath string) (*Machine, error) {
 		return m, fmt.Errorf(`/dev/kvm: %w`, err)
 	}
 
+	// kvm 虚拟机 fd
 	m.kvmFd = devKVM.Fd()
 	m.vcpuFds = make([]uintptr, nCpus)
 	m.runs = make([]*kvm.RunData, nCpus)
 
+	// 设置 kvm 内部的寄存器
 	if m.vmFd, err = kvm.CreateVM(m.kvmFd); err != nil {
 		return m, fmt.Errorf("CreateVM: %w", err)
 	}
 
+	// 设置 TSS 地址
 	if err := kvm.SetTSSAddr(m.vmFd); err != nil {
 		return m, err
 	}
@@ -99,19 +104,23 @@ func New(nCpus int, tapIfName string, diskPath string) (*Machine, error) {
 		return m, err
 	}
 
+	// vm 创建中断芯片
 	if err := kvm.CreateIRQChip(m.vmFd); err != nil {
 		return m, err
 	}
 
+	// vm 创建时间设备
 	if err := kvm.CreatePIT2(m.vmFd); err != nil {
 		return m, err
 	}
 
+	// vm 获取 cpu 对应的内存大小
 	mmapSize, err := kvm.GetVCPUMMmapSize(m.kvmFd)
 	if err != nil {
 		return m, err
 	}
 
+	// 根据传入的参数，创建 CPU
 	for i := 0; i < nCpus; i++ {
 		// Create vCPU
 		m.vcpuFds[i], err = kvm.CreateVCPU(m.vmFd, i)
@@ -124,6 +133,7 @@ func New(nCpus int, tapIfName string, diskPath string) (*Machine, error) {
 			return m, err
 		}
 
+		// 获取到 kvm_run 结构体
 		// init kvm_run structure
 		r, err := syscall.Mmap(int(m.vcpuFds[i]), 0, int(mmapSize), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
 		if err != nil {
@@ -133,6 +143,7 @@ func New(nCpus int, tapIfName string, diskPath string) (*Machine, error) {
 		m.runs[i] = (*kvm.RunData)(unsafe.Pointer(&r[0]))
 	}
 
+	// 申请系统内存并设置
 	m.mem, err = syscall.Mmap(-1, 0, memSize,
 		syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED|syscall.MAP_ANONYMOUS)
 	if err != nil {
@@ -147,6 +158,7 @@ func New(nCpus int, tapIfName string, diskPath string) (*Machine, error) {
 		return m, err
 	}
 
+	// Extended BIOS Data Area (EBDA).
 	e, err := ebda.New(nCpus)
 	if err != nil {
 		return m, err
@@ -157,13 +169,16 @@ func New(nCpus int, tapIfName string, diskPath string) (*Machine, error) {
 		return m, err
 	}
 
+	// BIOS 的代码写入到
 	copy(m.mem[bootparam.EBDAStart:], bytes)
 
+	// 母机创建 tap 设备，给网络使用
 	t, err := tap.New(tapIfName)
 	if err != nil {
 		return nil, err
 	}
 
+	// 创建 virtioNet，virtioBlk
 	virtioNet := virtio.NewNet(virtioNetIRQ, m, t, m.mem)
 	go virtioNet.TxThreadEntry()
 	go virtioNet.RxThreadEntry()
@@ -175,6 +190,7 @@ func New(nCpus int, tapIfName string, diskPath string) (*Machine, error) {
 
 	go virtioBlk.IOThreadEntry()
 
+	// kvm 的 pci赋值
 	m.pci = pci.New(
 		pci.NewBridge(), // 00:00.0 for PCI bridge
 		virtioNet,       // 00:01.0 for Virtio net
@@ -189,6 +205,7 @@ func (m *Machine) RunData() []*kvm.RunData {
 	return m.runs
 }
 
+// 通过 Linux Boot 协议加载 bzImage
 func (m *Machine) LoadLinux(kernel, initrd io.ReaderAt, params string) error {
 	// Load initrd
 	initrdSize, err := initrd.ReadAt(m.mem[initrdAddr:], 0)
@@ -272,6 +289,7 @@ func (m *Machine) LoadLinux(kernel, initrd io.ReaderAt, params string) error {
 
 	m.initIOPortHandlers()
 
+	// 创建串口并且赋值给 m.serial
 	if m.serial, err = serial.New(m); err != nil {
 		return err
 	}
@@ -283,6 +301,7 @@ func (m *Machine) GetInputChan() chan<- byte {
 	return m.serial.GetInputChan()
 }
 
+// 初始化通用寄出器
 func (m *Machine) initRegs(i int) error {
 	regs, err := kvm.GetRegs(m.vcpuFds[i])
 	if err != nil {
@@ -351,6 +370,7 @@ func (m *Machine) initCPUID(i int) error {
 	return nil
 }
 
+// vcpu 的运行循环
 func (m *Machine) RunInfiniteLoop(i int) error {
 	// https://www.kernel.org/doc/Documentation/virtual/kvm/api.txt
 	// - vcpu ioctls: These query and set attributes that control the operation
@@ -381,6 +401,7 @@ func (m *Machine) RunInfiniteLoop(i int) error {
 	}
 }
 
+// 执行 1 次 cpu, 直到因为IO、中断等退出
 func (m *Machine) RunOnce(i int) (bool, error) {
 	err := kvm.Run(m.vcpuFds[i])
 
@@ -390,8 +411,11 @@ func (m *Machine) RunOnce(i int) (bool, error) {
 
 		return false, err
 	case kvm.EXITIO:
-		direction, size, port, count, offset := m.runs[i].IO()
+		direction, size, port, count, offset := m.runs[i].IO() // direction 代表方向有 EXITIOOUT 和 EXITIOIN
 		f := m.ioportHandlers[port][direction]
+
+		// 传入给 handler 的 bytes
+		
 		bytes := (*(*[100]byte)(unsafe.Pointer(uintptr(unsafe.Pointer(m.runs[i])) + uintptr(offset))))[0:size]
 
 		for i := 0; i < int(count); i++ {
@@ -416,6 +440,13 @@ func (m *Machine) RunOnce(i int) (bool, error) {
 	}
 }
 
+// X86 将外设的寄存器看成一个独立的地址空间，所以访问内存的指令不能用来访问这些寄存器，
+// 而要为对外设寄存器的读／写设置专用指令，如IN和OUT指令。这就是所谓的“ I/O端口”方式。
+
+// 对于x86架构来说，通过IN/OUT指令访问。PC架构一共有65536个8bit的I/O端口，组成64K个
+// I/O地址空间，编号从 0~0xFFFF，有16位，80x86用低16位地址线A0-A15来寻址。
+
+// 初始化 IO 处理。当内核往设备中写入数据时，需要调用这些 handler。此时触发发kvm退出，退出原因 KVM_EXIT_IO
 func (m *Machine) initIOPortHandlers() {
 	funcNone := func(m *Machine, port uint64, bytes []byte) error {
 		return nil
@@ -449,6 +480,7 @@ func (m *Machine) initIOPortHandlers() {
 		return fmt.Errorf("write %#x to cf9: %w", bytes, ErrorWriteToCF9)
 	}
 
+	// 设置默认的 IO 处理函数。从 0 到 0x10000 的port都被设置成默认处理函数
 	// default handler
 	for port := 0; port < 0x10000; port++ {
 		for dir := kvm.EXITIOIN; dir <= kvm.EXITIOOUT; dir++ {
@@ -456,6 +488,7 @@ func (m *Machine) initIOPortHandlers() {
 		}
 	}
 
+	// 覆盖一些默认 handler
 	for dir := kvm.EXITIOIN; dir <= kvm.EXITIOOUT; dir++ {
 		// CF9
 		m.ioportHandlers[0xcf9][dir] = funcNone
@@ -528,13 +561,14 @@ func (m *Machine) initIOPortHandlers() {
 		m.ioportHandlers[port][kvm.EXITIOOUT] = funcNone
 	}
 
+	// 串口的读写。当 vm 退出时，要从设备读取数据
 	// Serial port 1
 	for port := serial.COM1Addr; port < serial.COM1Addr+8; port++ {
 		m.ioportHandlers[port][kvm.EXITIOIN] = func(m *Machine, port uint64, bytes []byte) error {
-			return m.serial.In(port, bytes)
+			return m.serial.In(port, bytes) // 从设备读取数据
 		}
 		m.ioportHandlers[port][kvm.EXITIOOUT] = func(m *Machine, port uint64, bytes []byte) error {
-			return m.serial.Out(port, bytes)
+			return m.serial.Out(port, bytes) // 往设备写入数据
 		}
 	}
 
@@ -570,6 +604,7 @@ func (m *Machine) initIOPortHandlers() {
 	}
 }
 
+// EXITIOIN 退出引起。IO端口中读取数据，对应x86指令 IN
 func pciInFunc(m *Machine, port uint64, bytes []byte) error {
 	for i := range m.pci.Devices {
 		start, end := m.pci.Devices[i].GetIORange()
@@ -581,6 +616,7 @@ func pciInFunc(m *Machine, port uint64, bytes []byte) error {
 	return errorPCIDeviceNotFoundForPort
 }
 
+// EXITIOOUT 退出引起。IO端口中写入数据，对应x86指令 out
 func pciOutFunc(m *Machine, port uint64, bytes []byte) error {
 	for i := range m.pci.Devices {
 		start, end := m.pci.Devices[i].GetIORange()
@@ -592,6 +628,7 @@ func pciOutFunc(m *Machine, port uint64, bytes []byte) error {
 	return errorPCIDeviceNotFoundForPort
 }
 
+// 注入串口中断。也就是说触发一次串口中断
 func (m *Machine) InjectSerialIRQ() error {
 	if err := kvm.IRQLine(m.vmFd, serialIRQ, 0); err != nil {
 		return err
@@ -604,6 +641,7 @@ func (m *Machine) InjectSerialIRQ() error {
 	return nil
 }
 
+// 注入网络中断。也就是说触发一次网络中断
 func (m *Machine) InjectVirtioNetIRQ() error {
 	if err := kvm.IRQLine(m.vmFd, virtioNetIRQ, 0); err != nil {
 		return err
@@ -616,6 +654,7 @@ func (m *Machine) InjectVirtioNetIRQ() error {
 	return nil
 }
 
+// 注入磁盘中断。也就是说触发一次磁盘中断
 func (m *Machine) InjectVirtioBlkIRQ() error {
 	if err := kvm.IRQLine(m.vmFd, virtioBlkIRQ, 0); err != nil {
 		return err
