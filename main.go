@@ -18,6 +18,7 @@ func main() {
 		log.Fatalf("ParseArgs: %v", err)
 	}
 
+	// 创建虚拟机
 	m, err := machine.New(nCpus, tapIfName, diskPath)
 	if err != nil {
 		log.Fatalf("%v", err)

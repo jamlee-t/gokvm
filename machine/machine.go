@@ -169,7 +169,7 @@ func New(nCpus int, tapIfName string, diskPath string) (*Machine, error) {
 		return m, err
 	}
 
-	// BIOS 的代码写入到
+	// EBDA的参数代码写入到参数位置
 	copy(m.mem[bootparam.EBDAStart:], bytes)
 
 	// 母机创建 tap 设备，给网络使用
