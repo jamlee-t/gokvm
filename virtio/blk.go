@@ -49,6 +49,7 @@ type blkHeader struct {
 	capacity uint64
 }
 
+// PCI 设备的中断号是申明的。不是内核预先分配的
 func (v Blk) GetDeviceHeader() pci.DeviceHeader {
 	return pci.DeviceHeader{
 		DeviceID:    0x1001,

@@ -65,6 +65,7 @@ type netHeader struct {
 	_ uint16   // maxVirtQueuePairs
 }
 
+// PCI 设备的中断号是申明的。不是内核预先分配的
 func (v Net) GetDeviceHeader() pci.DeviceHeader {
 	return pci.DeviceHeader{
 		DeviceID:    0x1000,

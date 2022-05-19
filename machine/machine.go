@@ -56,8 +56,20 @@ const (
 
 	// 硬件中断号
 	serialIRQ    = 4
-	virtioNetIRQ = 9
-	virtioBlkIRQ = 10
+	// 换成 10 和 11 也可以工作，这里都是用的 pic（不是 apic）。https://www.webopedia.com/reference/irqnumbers/
+	// 
+	// (initramfs) cat /proc/interrupts 
+	// 	   CPU0       CPU1       
+	// 0:     437519          0    XT-PIC       timer
+	// 2:          0          0    XT-PIC       cascade
+	// 4:        199          1    XT-PIC       ttyS0
+	// 9:          0          0    XT-PIC       virtio1
+	// 10:          0          0    XT-PIC       virtio0
+	// virtioNetIRQ = 9
+	// virtioBlkIRQ = 10
+	virtioNetIRQ = 10
+	virtioBlkIRQ = 9
+	
 )
 
 var (
