@@ -61,10 +61,6 @@ func TestIRQRouting(t *testing.T) {
 }
 
 func TestGetAPIVersion(t *testing.T) {
-	if os.Getuid() != 0 {
-		t.Skipf("Skipping test since we are not root")
-	}
-
 	t.Parallel()
 
 	devKVM, err := os.OpenFile("/dev/kvm", os.O_RDWR, 0o644)
@@ -81,10 +77,6 @@ func TestGetAPIVersion(t *testing.T) {
 }
 
 func TestCreateVM(t *testing.T) {
-	if os.Getuid() != 0 {
-		t.Skipf("Skipping test since we are not root")
-	}
-
 	t.Parallel()
 
 	devKVM, err := os.OpenFile("/dev/kvm", os.O_RDWR, 0o644)
@@ -112,10 +104,6 @@ func TestCreateVM(t *testing.T) {
 }
 
 func TestCPUID(t *testing.T) {
-	if os.Getuid() != 0 {
-		t.Skipf("Skipping test since we are not root")
-	}
-
 	t.Parallel()
 
 	devKVM, err := os.OpenFile("/dev/kvm", os.O_RDWR, 0o644)
@@ -161,10 +149,6 @@ func TestCPUID(t *testing.T) {
 }
 
 func TestCreateVCPU(t *testing.T) {
-	if os.Getuid() != 0 {
-		t.Skipf("Skipping test since we are not root")
-	}
-
 	t.Parallel()
 
 	devKVM, err := os.OpenFile("/dev/kvm", os.O_RDWR, 0o644)
@@ -216,10 +200,6 @@ func TestCreateVCPU(t *testing.T) {
 }
 
 func TestGetVCPUMMapSize(t *testing.T) {
-	if os.Getuid() != 0 {
-		t.Skipf("Skipping test since we are not root")
-	}
-
 	t.Parallel()
 
 	devKVM, err := os.OpenFile("/dev/kvm", os.O_RDWR, 0o644)
@@ -236,10 +216,6 @@ func TestGetVCPUMMapSize(t *testing.T) {
 }
 
 func TestCreateVCPUWithNoVmFd(t *testing.T) {
-	if os.Getuid() != 0 {
-		t.Skipf("Skipping test since we are not root")
-	}
-
 	t.Parallel()
 
 	devKVM, err := os.OpenFile("/dev/kvm", os.O_RDWR, 0o644)
@@ -255,10 +231,6 @@ func TestCreateVCPUWithNoVmFd(t *testing.T) {
 
 // mirror from https://lwn.net/Articles/658512/
 func TestAddNum(t *testing.T) {
-	if os.Getuid() != 0 {
-		t.Skipf("Skipping test since we are not root")
-	}
-
 	t.Parallel()
 
 	devKVM, err := os.OpenFile("/dev/kvm", os.O_RDWR, 0o644)
@@ -398,10 +370,6 @@ func TestAddNum(t *testing.T) {
 }
 
 func TestSetMemLogDirtyPages(t *testing.T) {
-	if os.Getuid() != 0 {
-		t.Skipf("Skipping test since we are not root")
-	}
-
 	t.Parallel()
 
 	u := kvm.UserspaceMemoryRegion{}
@@ -414,10 +382,6 @@ func TestSetMemLogDirtyPages(t *testing.T) {
 }
 
 func TestIRQLine(t *testing.T) {
-	if os.Getuid() != 0 {
-		t.Skipf("Skipping test since we are not root")
-	}
-
 	t.Parallel()
 
 	devKVM, err := os.OpenFile("/dev/kvm", os.O_RDWR, 0o644)
@@ -464,10 +428,6 @@ func TestIoctlStringer(t *testing.T) {
 }
 
 func TestGetSetPID2(t *testing.T) {
-	if os.Getuid() != 0 {
-		t.Skipf("Skipping test since we are not root")
-	}
-
 	t.Parallel()
 
 	devKVM, err := os.OpenFile("/dev/kvm", os.O_RDWR, 0o644)
@@ -502,10 +462,6 @@ func TestGetSetPID2(t *testing.T) {
 }
 
 func TestSetGSIRouting(t *testing.T) {
-	if os.Getuid() != 0 {
-		t.Skipf("Skipping test since we are not root")
-	}
-
 	t.Parallel()
 
 	devKVM, err := os.OpenFile("/dev/kvm", os.O_RDWR, 0o644)
@@ -536,10 +492,6 @@ func TestSetGSIRouting(t *testing.T) {
 }
 
 func TestCoalescedMMIO(t *testing.T) {
-	if os.Getuid() != 0 {
-		t.Skipf("Skipping test since we are not root")
-	}
-
 	t.Parallel()
 
 	devKVM, err := os.OpenFile("/dev/kvm", os.O_RDWR, 0o644)
@@ -564,10 +516,6 @@ func TestCoalescedMMIO(t *testing.T) {
 }
 
 func TestSetNrMMUPages(t *testing.T) {
-	if os.Getuid() != 0 {
-		t.Skipf("Skipping test since we are not root")
-	}
-
 	t.Parallel()
 
 	devKVM, err := os.OpenFile("/dev/kvm", os.O_RDWR, 0o644)
@@ -582,22 +530,32 @@ func TestSetNrMMUPages(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := kvm.SetNrMMUPages(vmFd, 0x1000); err != nil {
+	err = kvm.SetNrMMUPages(vmFd, 0x1000)
+	if err != nil {
+		// KVM_SET_NR_MMU_PAGES was removed in Linux 6.11+
+		// Skip test if ioctl is not supported (ENOTTY = inappropriate ioctl for device)
+		if errors.Is(err, syscall.ENOTTY) {
+			t.Skipf("Skipping test: KVM_SET_NR_MMU_PAGES not supported (removed in kernel 6.11+)")
+		}
+
 		t.Fatal(err)
 	}
 
 	retval := uint64(0)
 
-	if err := kvm.GetNrMMUPages(vmFd, &retval); err != nil {
+	err = kvm.GetNrMMUPages(vmFd, &retval)
+	if err != nil {
+		// KVM_GET_NR_MMU_PAGES was also removed in Linux 6.11+
+		// Skip test if ioctl is not supported
+		if errors.Is(err, syscall.ENOTTY) {
+			t.Skipf("Skipping test: KVM_GET_NR_MMU_PAGES not supported (removed in kernel 6.11+)")
+		}
+
 		t.Fatal(err)
 	}
 }
 
 func TestGetDirtyLog(t *testing.T) {
-	if os.Getuid() != 0 {
-		t.Skipf("Skipping test since we are not root")
-	}
-
 	t.Parallel()
 
 	devKVM, err := os.OpenFile("/dev/kvm", os.O_RDWR, 0o644)
@@ -638,10 +596,6 @@ func TestGetDirtyLog(t *testing.T) {
 }
 
 func TestSetGetIRQChip(t *testing.T) {
-	if os.Getuid() != 0 {
-		t.Skipf("Skipping test since we are not root")
-	}
-
 	t.Parallel()
 
 	devKVM, err := os.OpenFile("/dev/kvm", os.O_RDWR, 0o644)
@@ -675,10 +629,6 @@ func TestSetGetIRQChip(t *testing.T) {
 }
 
 func TestGetEmulatedCPUID(t *testing.T) {
-	if os.Getuid() != 0 {
-		t.Skipf("Skipping test since we are not root")
-	}
-
 	t.Parallel()
 
 	devKVM, err := os.OpenFile("/dev/kvm", os.O_RDWR, 0o644)
@@ -699,10 +649,6 @@ func TestGetEmulatedCPUID(t *testing.T) {
 }
 
 func TestSetGetTSCKHz(t *testing.T) {
-	if os.Getuid() != 0 {
-		t.Skipf("Skipping test since we are not root")
-	}
-
 	t.Parallel()
 
 	devKVM, err := os.OpenFile("/dev/kvm", os.O_RDWR, 0o644)
@@ -733,10 +679,6 @@ func TestSetGetTSCKHz(t *testing.T) {
 }
 
 func TestSetGetClock(t *testing.T) {
-	if os.Getuid() != 0 {
-		t.Skipf("Skipping test since we are not root")
-	}
-
 	t.Parallel()
 
 	devKVM, err := os.OpenFile("/dev/kvm", os.O_RDWR, 0o644)
@@ -763,10 +705,6 @@ func TestSetGetClock(t *testing.T) {
 }
 
 func TestCreateDev(t *testing.T) {
-	if os.Getuid() != 0 {
-		t.Skipf("Skipping test since we are not root")
-	}
-
 	t.Parallel()
 
 	devKVM, err := os.OpenFile("/dev/kvm", os.O_RDWR, 0o644)
@@ -797,10 +735,6 @@ func TestCreateDev(t *testing.T) {
 }
 
 func TestInjectInterrpt(t *testing.T) {
-	if os.Getuid() != 0 {
-		t.Skipf("Skipping test since we are not root")
-	}
-
 	t.Parallel()
 
 	devKVM, err := os.OpenFile("/dev/kvm", os.O_RDWR, 0o644)
@@ -827,10 +761,6 @@ func TestInjectInterrpt(t *testing.T) {
 }
 
 func TestGetMSRIndexList(t *testing.T) {
-	if os.Getuid() != 0 {
-		t.Skipf("Skipping test since we are not root")
-	}
-
 	t.Parallel()
 
 	devKVM, err := os.OpenFile("/dev/kvm", os.O_RDWR, 0o644)
@@ -863,10 +793,6 @@ func TestGetMSRIndexList(t *testing.T) {
 }
 
 func TestGetMSRFeatureIndexList(t *testing.T) {
-	if os.Getuid() != 0 {
-		t.Skipf("Skipping test since we are not root")
-	}
-
 	t.Parallel()
 
 	devKVM, err := os.OpenFile("/dev/kvm", os.O_RDWR, 0o644)
@@ -911,10 +837,6 @@ func TestGetMSRFeatureIndexList(t *testing.T) {
 }
 
 func TestGetSetLocalAPIC(t *testing.T) {
-	if os.Getuid() != 0 {
-		t.Skipf("Skipping test since we are not root")
-	}
-
 	t.Parallel()
 
 	devKVM, err := os.OpenFile("/dev/kvm", os.O_RDWR, 0o644)
@@ -952,10 +874,6 @@ func TestGetSetLocalAPIC(t *testing.T) {
 }
 
 func TestReinjectControl(t *testing.T) {
-	if os.Getuid() != 0 {
-		t.Skipf("Skipping test since we are not root")
-	}
-
 	t.Parallel()
 
 	devKVM, err := os.OpenFile("/dev/kvm", os.O_RDWR, 0o644)
@@ -984,10 +902,6 @@ func TestReinjectControl(t *testing.T) {
 }
 
 func TestTranslate(t *testing.T) {
-	if os.Getuid() != 0 {
-		t.Skipf("Skipping test since we are not root")
-	}
-
 	t.Parallel()
 
 	devKVM, err := os.OpenFile("/dev/kvm", os.O_RDWR, 0o644)
@@ -1033,10 +947,6 @@ func TestTranslate(t *testing.T) {
 }
 
 func TestTRPAccessReporting(t *testing.T) {
-	if os.Getuid() != 0 {
-		t.Skipf("Skipping test since we are not root")
-	}
-
 	t.Parallel()
 
 	devKVM, err := os.OpenFile("/dev/kvm", os.O_RDWR, 0o644)
@@ -1075,10 +985,6 @@ func TestTRPAccessReporting(t *testing.T) {
 }
 
 func TestGetSetMPState(t *testing.T) {
-	if os.Getuid() != 0 {
-		t.Skipf("Skipping test since we are not root")
-	}
-
 	t.Parallel()
 
 	devKVM, err := os.OpenFile("/dev/kvm", os.O_RDWR, 0o644)
@@ -1121,10 +1027,6 @@ func TestGetSetMPState(t *testing.T) {
 }
 
 func TestX86MCE(t *testing.T) {
-	if os.Getuid() != 0 {
-		t.Skipf("Skipping test since we are not root")
-	}
-
 	t.Parallel()
 
 	devKVM, err := os.OpenFile("/dev/kvm", os.O_RDWR, 0o644)
@@ -1167,10 +1069,6 @@ func TestX86MCE(t *testing.T) {
 }
 
 func TestGetSetVCPUEvents(t *testing.T) {
-	if os.Getuid() != 0 {
-		t.Skipf("Skipping test since we are not root")
-	}
-
 	t.Parallel()
 
 	devKVM, err := os.OpenFile("/dev/kvm", os.O_RDWR, 0o644)
@@ -1211,10 +1109,6 @@ func TestGetSetVCPUEvents(t *testing.T) {
 }
 
 func TestGetSetDebugRegs(t *testing.T) {
-	if os.Getuid() != 0 {
-		t.Skipf("Skipping test since we are not root")
-	}
-
 	t.Parallel()
 
 	devKVM, err := os.OpenFile("/dev/kvm", os.O_RDWR, 0o644)
@@ -1255,10 +1149,6 @@ func TestGetSetDebugRegs(t *testing.T) {
 }
 
 func TestGetSetXCRS(t *testing.T) {
-	if os.Getuid() != 0 {
-		t.Skipf("Skipping test since we are not root")
-	}
-
 	t.Parallel()
 
 	devKVM, err := os.OpenFile("/dev/kvm", os.O_RDWR, 0o644)
@@ -1299,10 +1189,6 @@ func TestGetSetXCRS(t *testing.T) {
 }
 
 func TestSMI(t *testing.T) {
-	if os.Getuid() != 0 {
-		t.Skipf("Skipping test since we are not root")
-	}
-
 	t.Parallel()
 
 	devKVM, err := os.OpenFile("/dev/kvm", os.O_RDWR, 0o644)
@@ -1337,10 +1223,6 @@ func TestSMI(t *testing.T) {
 }
 
 func TestGetSetSRegs2(t *testing.T) {
-	if os.Getuid() != 0 {
-		t.Skipf("Skipping test since we are not root")
-	}
-
 	t.Parallel()
 
 	devKVM, err := os.OpenFile("/dev/kvm", os.O_RDWR, 0o644)
@@ -1381,10 +1263,6 @@ func TestGetSetSRegs2(t *testing.T) {
 }
 
 func TestGetSetMSRS(t *testing.T) {
-	if os.Getuid() != 0 {
-		t.Skipf("Skipping test since we are not root")
-	}
-
 	t.Parallel()
 
 	devKVM, err := os.OpenFile("/dev/kvm", os.O_RDWR, 0o644)
